@@ -1,0 +1,12 @@
+[general]
+name=Eco Monitoring Plugin
+qgisMinimumVersion=3.0
+description=Плагин для автоматизации обработки карт экологического мониторинга
+version=1.0
+author=Anna Yakushina
+email=yacuchina@yandex.ru
+[requirements]
+pip=pymupdf opencv-python numpy
+pymupdf>=1.18.0
+opencv-python>=4.5.0
+numpy>=1.20.0
