@@ -13,8 +13,6 @@ from qgis.core import (
     QgsRendererCategory, QgsCategorizedSymbolRenderer
 )
 import fitz  # PyMuPDF
-import cv2
-import numpy as np
 
 class PDFConverterThread(QThread):
     progress = pyqtSignal(int)
@@ -32,12 +30,11 @@ class PDFConverterThread(QThread):
             total_pages = len(doc)
             
             for i, page in enumerate(doc):
+                # Упрощенная конвертация без OpenCV
                 pix = page.get_pixmap(dpi=300)
-                img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
-                    pix.height, pix.width, pix.n
-                )
                 output_path = os.path.join(self.output_dir, f"page_{i+1}.png")
-                cv2.imwrite(output_path, cv2.cvtColor(img, cv2.COLOR_RGB2BGR))
+                pix.save(output_path)  # Прямое сохранение через PyMuPDF
+                
                 self.progress.emit(int((i + 1) / total_pages * 100))
             
             self.finished.emit(self.output_dir)
