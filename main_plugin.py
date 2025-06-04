@@ -13,31 +13,51 @@ from qgis.core import (
     QgsRendererCategory, QgsCategorizedSymbolRenderer
 )
 import fitz  # PyMuPDF
+from qgis.PyQt.QtWidgets import QInputDialog
+
 
 class PDFConverterThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, pdf_path, output_dir):
-        super().__init__()
+    def __init__(self, pdf_path, output_dir, parent=None):
+        super().__init__(parent)
         self.pdf_path = pdf_path
         self.output_dir = output_dir
+        self.parent = parent  # для доступа к диалоговым окнам
 
     def run(self):
         try:
             doc = fitz.open(self.pdf_path)
             total_pages = len(doc)
             
-            for i, page in enumerate(doc):
-                # Упрощенная конвертация без OpenCV
-                pix = page.get_pixmap(dpi=300)
-                output_path = os.path.join(self.output_dir, f"page_{i+1}.png")
-                pix.save(output_path)  # Прямое сохранение через PyMuPDF
+            # запрос имени файла у пользователя
+            file_name, ok = QInputDialog.getText(
+                self.parent, 
+                "Имя файла",
+                "Введите имя для сохраняемого файла (без расширения):",
+                text="converted_map"
+            )
+            if not ok or not file_name:
+                self.error.emit("Отменено пользователем")
+                return
                 
+            output_path = os.path.join(self.output_dir, f"{file_name}.png")
+            
+            # если файл уже существует - добавляем индекс
+            counter = 1
+            while os.path.exists(output_path):
+                output_path = os.path.join(self.output_dir, f"{file_name}_{counter}.png")
+                counter += 1
+
+            for i, page in enumerate(doc):
+                pix = page.get_pixmap(dpi=300)
+                pix.save(output_path)
                 self.progress.emit(int((i + 1) / total_pages * 100))
             
-            self.finished.emit(self.output_dir)
+            self.finished.emit(output_path)  # возвращаем полный путь к файлу
+            
         except Exception as e:
             self.error.emit(f"Ошибка конвертации: {str(e)}")
 
