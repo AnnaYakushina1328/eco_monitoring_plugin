@@ -20,46 +20,53 @@ class PDFConverterThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
+    ask_filename = pyqtSignal()  # новый сигнал для запроса имени файла
 
     def __init__(self, pdf_path, output_dir, parent=None):
         super().__init__(parent)
         self.pdf_path = pdf_path
         self.output_dir = output_dir
-        self.parent = parent  # для доступа к диалоговым окнам
+        self.file_name = "converted_map"  # значение по умолчанию
+        self.ask_filename.connect(self.request_filename, Qt.QueuedConnection)
 
-    def run(self):
+    def request_filename(self):
+        """Вызывается в основном потоке через сигнал"""
+        file_name, ok = QInputDialog.getText(
+            None,  # используем None вместо self.parent
+            "Имя файла",
+            "Введите имя для сохраняемого файла (без расширения):",
+            text="converted_map"
+        )
+        if ok and file_name:
+            self.file_name = file_name
+        self.start_conversion()
+
+    def start_conversion(self):
+        """Запускает конвертацию после получения имени файла"""
         try:
             doc = fitz.open(self.pdf_path)
-            total_pages = len(doc)
+            output_path = os.path.join(self.output_dir, f"{self.file_name}.png")
             
-            # запрос имени файла у пользователя
-            file_name, ok = QInputDialog.getText(
-                self.parent, 
-                "Имя файла",
-                "Введите имя для сохраняемого файла (без расширения):",
-                text="converted_map"
-            )
-            if not ok or not file_name:
-                self.error.emit("Отменено пользователем")
-                return
-                
-            output_path = os.path.join(self.output_dir, f"{file_name}.png")
-            
-            # если файл уже существует - добавляем индекс
+            # проверка существования файла
             counter = 1
             while os.path.exists(output_path):
-                output_path = os.path.join(self.output_dir, f"{file_name}_{counter}.png")
+                output_path = os.path.join(self.output_dir, f"{self.file_name}_{counter}.png")
                 counter += 1
 
+            # конвертация
             for i, page in enumerate(doc):
                 pix = page.get_pixmap(dpi=300)
                 pix.save(output_path)
-                self.progress.emit(int((i + 1) / total_pages * 100))
+                self.progress.emit(int((i + 1) / len(doc) * 100))
             
-            self.finished.emit(output_path)  # возвращаем полный путь к файлу
+            self.finished.emit(output_path)
             
         except Exception as e:
             self.error.emit(f"Ошибка конвертации: {str(e)}")
+
+    def run(self):
+        """Точка входа в поток"""
+        self.ask_filename.emit()  # запрашиваем имя файла через сигнал
 
 class EcoMonitoringPlugin:
     def __init__(self, iface):
