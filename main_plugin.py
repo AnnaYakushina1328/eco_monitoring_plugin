@@ -370,6 +370,24 @@ class EcoMonitoringPlugin:
         msg.setText(message)
         msg.exec_()
 
+    def on_contours_extracted(self, output_file):
+        """Действия после извлечения контуров"""
+        self.progress_bar.setVisible(False)
+        QMessageBox.information(
+            self.dialog,
+            "Готово",
+            f"Контуры успешно извлечены и сохранены! Сохранено в:{output_file}"
+        )
+
+        # Добавление слоя в QGIS
+        layer = QgsVectorLayer(output_file, "Контуры", "ogr")
+        if not layer.isValid():
+            self.show_message("Ошибка", "Не удалось загрузить слой!")
+            return
+
+        QgsProject.instance().addMapLayer(layer)
+        self.show_message("Успех", "Контуры успешно добавлены в проект QGIS!")
+
 class ContourExtractorThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
