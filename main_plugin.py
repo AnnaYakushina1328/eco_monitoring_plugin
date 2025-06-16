@@ -103,12 +103,18 @@ class EcoMonitoringPlugin:
         self.dialog.setMinimumSize(450, 350)
         
         layout = QVBoxLayout()
-        
+
         # Заголовок
         title = QLabel("<h2>Экологический мониторинг</h2>")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
+        # Извлечение набора данных границ с карты
+        btn_extract_contours = QPushButton("Извлечь контуры")
+        btn_extract_contours.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px;")
+        btn_extract_contours.clicked.connect(self.extract_contours)
+        layout.addWidget(btn_extract_contours)
+
         # Выбор слоя
         layout.addWidget(QLabel("Выберите слой для анализа:"))
         self.layer_combo = QComboBox()
@@ -149,6 +155,34 @@ class EcoMonitoringPlugin:
         
         self.dialog.setLayout(layout)
         self.dialog.show()
+
+    def extract_contours(self):
+        """Извлечение контуров из растровой карты"""
+        # Выбор файла карты
+        image_path, _ = QFileDialog.getOpenFileName(
+            self.dialog, "Выберите файл карты", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if not image_path:
+            return
+
+        # Выбор папки для сохранения результатов
+        output_dir = QFileDialog.getExistingDirectory(
+            self.dialog, "Выберите папку для сохранения"
+        )
+        if not output_dir:
+            return
+
+        # Имя выходного файла
+        output_file = os.path.join(output_dir, "contours.geojson")
+
+        # Запуск потока для извлечения контуров
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.contour_thread = ContourExtractorThread(image_path, output_file)
+        self.contour_thread.progress.connect(self.progress_bar.setValue)
+        self.contour_thread.finished.connect(self.on_contours_extracted)
+        self.contour_thread.error.connect(self.show_error)
+        self.contour_thread.start()
 
     def convert_pdf(self):
         """Конвертация PDF в PNG с прогресс-баром"""
@@ -224,10 +258,7 @@ class EcoMonitoringPlugin:
             
             # Пороги классификации
             thresholds = {
-                'Низкий': (0, 50),
-                'Умеренный': (51, 100),
-                'Высокий': (101, 200),
-                'Очень высокий': (201, 1000)
+                (0, 1000)
             }
             
             # Обрабатываем объекты
