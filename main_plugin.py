@@ -14,6 +14,10 @@ from qgis.core import (
 )
 import fitz  # PyMuPDF
 from qgis.PyQt.QtWidgets import QInputDialog
+import cv2
+import numpy as np
+from qgis.core import QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY
+import json
 
 
 class PDFConverterThread(QThread):
@@ -365,3 +369,56 @@ class EcoMonitoringPlugin:
         msg.setWindowTitle(title)
         msg.setText(message)
         msg.exec_()
+
+class ContourExtractorThread(QThread):
+    progress = pyqtSignal(int)
+    finished = pyqtSignal(str)
+    error = pyqtSignal(str)
+
+    def __init__(self, image_path, output_file, parent=None):
+        super().__init__(parent)
+        self.image_path = image_path
+        self.output_file = output_file
+
+    def run(self):
+        try:
+            # Чтение изображения
+            image = cv2.imread(self.image_path)
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+
+            # Бинаризация изображения
+            _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+
+            # Нахождение контуров
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Преобразование контуров в GeoJSON
+            features = []
+            for contour in contours:
+                # Преобразование контура в список координат
+                points = contour.squeeze().tolist()
+                # Создание многоугольника
+                polygon = {
+                    "type": "Polygon",
+                    "coordinates": [points]
+                }
+                feature = {
+                    "type": "Feature",
+                    "geometry": polygon,
+                    "properties": {}
+                }
+                features.append(feature)
+
+            # Создание GeoJSON
+            geojson = {
+                "type": "FeatureCollection",
+                "features": features
+            }
+
+            # Сохранение в файл
+            with open(self.output_file, 'w') as f:
+                json.dump(geojson, f)
+
+            self.finished.emit(self.output_file)
+        except Exception as e:
+            self.error.emit(f"Ошибка извлечения контуров: {str(e)}")
