@@ -385,6 +385,34 @@ class EcoMonitoringPlugin:
         if not layer.isValid():
             self.show_message("Ошибка", "Не удалось загрузить слой!")
             return
+    
+    def generate_contour_report(self, geojson_path):
+        """Генерация отчета с координатами полигонов"""
+        try:
+            with open(geojson_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            report_text = "📊 Отчет по извлеченным контурам:\n\n"
+            for feature in data.get("features", []):
+                poly_id = feature["properties"]["id"]
+                coords = feature["geometry"]["coordinates"][0]  # Только внешний контур
+                coord_str = "\n".join([f"{x:.2f}, {y:.2f}" for x, y in coords])
+                report_text += f"🔹 Полигон #{poly_id} ({len(coords)} точек):\n{coord_str}\n\n"
+
+            # Показываем отчет
+            dialog = QDialog()
+            dialog.setWindowTitle("Отчет по контурам")
+            layout = QVBoxLayout()
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+            text_edit.setText(report_text)
+            layout.addWidget(text_edit)
+            dialog.setLayout(layout)
+            dialog.resize(600, 400)
+            dialog.exec_()
+
+        except Exception as e:
+            self.show_message("Ошибка", f"Ошибка генерации отчета: {str(e)}")
 
     QgsProject.instance().addMapLayer(layer)
     self.generate_contour_report(output_file)
