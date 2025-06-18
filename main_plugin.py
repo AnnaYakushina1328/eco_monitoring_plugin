@@ -376,17 +376,18 @@ class EcoMonitoringPlugin:
         QMessageBox.information(
             self.dialog,
             "Готово",
-            f"Контуры успешно извлечены и сохранены! Сохранено в:{output_file}"
+            f"Контуры успешно извлечены и сохранены!\nФайл: {output_file}"
         )
 
-        # Добавление слоя в QGIS
-        layer = QgsVectorLayer(output_file, "Контуры", "ogr")
+        # Загружаем GeoJSON как слой в QGIS
+        layer_name = os.path.splitext(os.path.basename(output_file))[0]
+        layer = QgsVectorLayer(output_file, layer_name, "ogr")
         if not layer.isValid():
             self.show_message("Ошибка", "Не удалось загрузить слой!")
             return
 
-        QgsProject.instance().addMapLayer(layer)
-        self.show_message("Успех", "Контуры успешно добавлены в проект QGIS!")
+    QgsProject.instance().addMapLayer(layer)
+    self.generate_contour_report(output_file)
 
 class ContourExtractorThread(QThread):
     progress = pyqtSignal(int)
