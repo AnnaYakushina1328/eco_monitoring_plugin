@@ -385,6 +385,9 @@ class EcoMonitoringPlugin:
         if not layer.isValid():
             self.show_message("Ошибка", "Не удалось загрузить слой!")
             return
+        
+        QgsProject.instance().addMapLayer(layer)
+        self.generate_contour_report(output_file)
     
     def generate_contour_report(self, geojson_path):
         """Генерация отчета с координатами полигонов"""
@@ -413,9 +416,6 @@ class EcoMonitoringPlugin:
 
         except Exception as e:
             self.show_message("Ошибка", f"Ошибка генерации отчета: {str(e)}")
-
-    QgsProject.instance().addMapLayer(layer)
-    self.generate_contour_report(output_file)
 
 class ContourExtractorThread(QThread):
     progress = pyqtSignal(int)
