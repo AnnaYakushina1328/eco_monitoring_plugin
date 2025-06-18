@@ -437,11 +437,18 @@ class ContourExtractorThread(QThread):
             # Переводим в оттенки серого
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Бинаризация: пороговое преобразование
-            _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
+            # Адаптивная бинаризация
+            thresh = cv2.adaptiveThreshold(
+                gray,
+                255,
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY_INV,
+                11,  # размер окна
+                2   # константа C
+            )
 
-            # Убираем шумы морфологическими операциями
-            kernel = np.ones((3, 3), np.uint8)
+            # Морфологическая операция: закрытие (заполнение дырок)
+            kernel = np.ones((5, 5), np.uint8)
             thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
             # Поиск контуров
