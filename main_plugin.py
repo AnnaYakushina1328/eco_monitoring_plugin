@@ -402,41 +402,54 @@ class ContourExtractorThread(QThread):
         try:
             # Чтение изображения
             image = cv2.imread(self.image_path)
+            if image is None:
+                raise ValueError("Не удалось загрузить изображение")
+
+            # Переводим в оттенки серого
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Бинаризация изображения
+            # Бинаризация: пороговое преобразование
             _, thresh = cv2.threshold(gray, 127, 255, cv2.THRESH_BINARY_INV)
 
-            # Нахождение контуров
+            # Убираем шумы морфологическими операциями
+            kernel = np.ones((3, 3), np.uint8)
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+            # Поиск контуров
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-            # Преобразование контуров в GeoJSON
+            # Формируем GeoJSON FeatureCollection
             features = []
-            for contour in contours:
-                # Преобразование контура в список координат
-                points = contour.squeeze().tolist()
-                # Создание многоугольника
-                polygon = {
-                    "type": "Polygon",
-                    "coordinates": [points]
-                }
+            for i, contour in enumerate(contours):
+                area = cv2.contourArea(contour)
+                if area < 500:  # фильтруем слишком маленькие объекты
+                    continue
+
+                # Преобразуем контур в список координат
+                coords = [list(map(float, pt[0])) for pt in contour]
                 feature = {
                     "type": "Feature",
-                    "geometry": polygon,
-                    "properties": {}
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords]
+                    },
+                    "properties": {
+                        "id": i + 1,
+                        "area_px": area
+                    }
                 }
                 features.append(feature)
 
-            # Создание GeoJSON
-            geojson = {
+            geojson_data = {
                 "type": "FeatureCollection",
                 "features": features
             }
 
-            # Сохранение в файл
-            with open(self.output_file, 'w') as f:
-                json.dump(geojson, f)
+            # Сохраняем GeoJSON
+            with open(self.output_file, 'w', encoding='utf-8') as f:
+                json.dump(geojson_data, f, indent=2)
 
             self.finished.emit(self.output_file)
+
         except Exception as e:
-            self.error.emit(f"Ошибка извлечения контуров: {str(e)}")
+            self.error.emit(f"Ошибка при извлечении контуров: {str(e)}")
