@@ -413,6 +413,63 @@ class EcoMonitoringPlugin:
             dialog.setLayout(layout)
             dialog.resize(600, 400)
             dialog.exec_()
+    
+        except Exception as e:
+            self.show_message("Ошибка", f"Ошибка генерации отчета: {str(e)}")
+
+    def generate_contour_report_with_csv(self, geojson_path):
+        """Генерация отчета с возможностью сохранения в CSV"""
+        try:
+            with open(geojson_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+
+            dialog = QDialog()
+            dialog.setWindowTitle("Отчет по контурам")
+            layout = QVBoxLayout()
+
+            # Текстовое поле
+            text_edit = QTextEdit()
+            text_edit.setReadOnly(True)
+
+            # Кнопки
+            btn_layout = QHBoxLayout()
+            save_btn = QPushButton("Сохранить в CSV")
+
+            # Сбор текста
+            report_text = "📊 Отчет по извлеченным контурам:\n\n"
+            csv_data = []
+
+            for feature in data.get("features", []):
+                poly_id = feature["properties"]["id"]
+                coords = feature["geometry"]["coordinates"][0]  # Только внешний контур
+                coord_str = "\n".join([f"{x:.2f}, {y:.2f}" for x, y in coords])
+                report_text += f"🔹 Полигон #{poly_id} ({len(coords)} точек):\n{coord_str}\n\n"
+
+                # Для CSV
+                for x, y in coords:
+                    csv_data.append([poly_id, x, y])
+
+            text_edit.setText(report_text)
+            layout.addWidget(text_edit)
+
+            # Обработчик нажатия на кнопку
+            def save_to_csv():
+                path, _ = QFileDialog.getSaveFileName(dialog, "Сохранить CSV", "", "CSV Files (*.csv)")
+                if path:
+                    import csv
+                    with open(path, 'w', newline='', encoding='utf-8') as csvfile:
+                        writer = csv.writer(csvfile)
+                        writer.writerow(["Polygon ID", "X", "Y"])
+                        writer.writerows(csv_data)
+                    QMessageBox.information(dialog, "Сохранено", f"Данные сохранены в файл:\n{path}")
+
+            save_btn.clicked.connect(save_to_csv)
+            btn_layout.addWidget(save_btn)
+            layout.addLayout(btn_layout)
+
+            dialog.setLayout(layout)
+            dialog.resize(600, 400)
+            dialog.exec_()
 
         except Exception as e:
             self.show_message("Ошибка", f"Ошибка генерации отчета: {str(e)}")
@@ -437,14 +494,17 @@ class ContourExtractorThread(QThread):
             # Переводим в оттенки серого
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
+            # Удаление шумов
+            gray = cv2.GaussianBlur(gray, (5, 5), 0)
+
             # Адаптивная бинаризация
             thresh = cv2.adaptiveThreshold(
                 gray,
                 255,
                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
                 cv2.THRESH_BINARY_INV,
-                11,  # размер окна
-                2   # константа C
+                11,  # Размер блока
+                2    # Константа C
             )
 
             # Морфологическая операция: закрытие (заполнение дырок)
@@ -453,6 +513,16 @@ class ContourExtractorThread(QThread):
 
             # Поиск контуров
             contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+            # Фильтрация внешнего контура
+            if not contours:
+                raise ValueError("Контур не найден")
+
+            # Сортировка контуров по площади (от большего к меньшему)
+            contours = sorted(contours, key=cv2.contourArea, reverse=True)
+
+            # Игнорируем самый большой контур (внешняя рамка)
+            contours = contours[1:]  # Пропускаем первый элемент (самый большой контур)
 
             # Формируем GeoJSON FeatureCollection
             features = []
