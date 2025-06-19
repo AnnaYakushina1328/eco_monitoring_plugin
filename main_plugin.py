@@ -385,9 +385,9 @@ class EcoMonitoringPlugin:
         if not layer.isValid():
             self.show_message("Ошибка", "Не удалось загрузить слой!")
             return
-        
+
         QgsProject.instance().addMapLayer(layer)
-        self.generate_contour_report(output_file)
+        self.generate_contour_report_with_csv(output_file)
     
     def generate_contour_report(self, geojson_path):
         """Генерация отчета с координатами полигонов"""
