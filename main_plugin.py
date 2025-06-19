@@ -18,6 +18,8 @@ import cv2
 import numpy as np
 from qgis.core import QgsVectorLayer, QgsFeature, QgsGeometry, QgsPointXY
 import json
+from qgis.PyQt.QtWidgets import QSlider
+from qgis.PyQt.QtGui import QPixmap, QImage
 
 
 class PDFConverterThread(QThread):
@@ -100,12 +102,43 @@ class EcoMonitoringPlugin:
         self.iface.removePluginMenu("Эко Мониторинг", self.action)
         self.iface.removeToolBarIcon(self.action)
 
+    def update_preview_with_thread(self):
+        """Обновление предпросмотра при изменении слайдеров"""
+        if not hasattr(self, 'preview_image_path'):
+            return
+
+        min_area = self.slider_min_area.value()
+        max_area = self.slider_max_area.value()
+
+        if hasattr(self, 'preview_thread'):
+            self.preview_thread.quit()
+            self.preview_thread.wait()
+
+        # передаем image_preview в поток
+        self.preview_thread = PreviewContourThread(
+            self.preview_image_path, 
+            min_area, 
+            max_area, 
+            self.image_preview  # Передаем image_preview
+        )
+        self.preview_thread.preview_ready.connect(self.image_preview.setPixmap)
+        self.preview_thread.error.connect(self.show_error)
+        self.preview_thread.start()
+
     def show_dialog(self):
         """Создание диалогового окна"""
         self.dialog = QDialog()
         self.dialog.setWindowTitle("Экологический мониторинг")
-        self.dialog.setMinimumSize(450, 350)
+        self.dialog.setMinimumSize(600, 550)
         
+        # Установка флагов окна
+        self.dialog.setWindowFlags(
+            Qt.Window | Qt.WindowCloseButtonHint | Qt.WindowMinimizeButtonHint | Qt.WindowMaximizeButtonHint
+        )
+        
+        # Начальный размер окна
+        self.dialog.resize(600, 550)
+
         layout = QVBoxLayout()
 
         # Заголовок
@@ -113,6 +146,13 @@ class EcoMonitoringPlugin:
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
         
+        # Предпросмотр изображения
+        self.image_preview = QLabel("Выберите изображение для предпросмотра")
+        self.image_preview.setFixedSize(300, 300)
+        self.image_preview.setStyleSheet("border: 1px solid #ccc;")
+        layout.addWidget(QLabel("Предпросмотр изображения:"))
+        layout.addWidget(self.image_preview)
+
         # Извлечение набора данных границ с карты
         btn_extract_contours = QPushButton("Извлечь контуры")
         btn_extract_contours.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px;")
@@ -152,13 +192,74 @@ class EcoMonitoringPlugin:
         btn_pdf.clicked.connect(self.convert_pdf)
         layout.addWidget(btn_pdf)
         
+        # слайдеры для настройки площади машинного зрения
+        slider_min_area = QSlider(Qt.Horizontal)
+        slider_min_area.setMinimum(100)
+        slider_min_area.setMaximum(10000)
+        slider_min_area.setValue(500)
+        layout.addWidget(QLabel("Минимальная площадь контура:"))
+        layout.addWidget(slider_min_area)
+
+        slider_max_area = QSlider(Qt.Horizontal)
+        slider_max_area.setMinimum(1000)
+        slider_max_area.setMaximum(1000000)
+        slider_max_area.setValue(100000)
+        layout.addWidget(QLabel("Максимальная площадь контура:"))
+        layout.addWidget(slider_max_area)
+
+        # сохранение ссылок на слайдеры
+        self.slider_min_area = slider_min_area
+        self.slider_max_area = slider_max_area
+
+        # обработка сигналов слайдеров
+        self.slider_min_area.valueChanged.connect(self.update_preview_with_thread)
+        self.slider_max_area.valueChanged.connect(self.update_preview_with_thread)
+
+        # подсказки
+        layout.addWidget(QLabel("💡 Советы:"))
+        layout.addWidget(QLabel("Минимальная площадь — размер самого маленького объекта, который будет учтен."))
+        layout.addWidget(QLabel("Максимальная площадь — игнорировать большие объекты, например, рамку карты."))
+
         # Прогресс-бар
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         layout.addWidget(self.progress_bar)
+
+        # кнопка для выбора изображения
+        btn_select_image = QPushButton("Выбрать изображение")
+        btn_select_image.clicked.connect(self.select_preview_image)
+        layout.addWidget(btn_select_image)
         
         self.dialog.setLayout(layout)
         self.dialog.show()
+
+    # метод выбора изображения
+    def select_preview_image(self):
+        image_path, _ = QFileDialog.getOpenFileName(
+            self.dialog, "Выберите растровое изображение", "", "Image Files (*.png *.jpg *.jpeg *.bmp)"
+        )
+        if image_path:
+            self.preview_image_path = image_path
+            self.update_preview_image()
+            
+    # метод отображения изображения в предпросмотре       
+    def update_preview_image(self):
+        if not hasattr(self, 'preview_image_path'):
+            return
+
+        # Загрузка изображения
+        pixmap = QPixmap(self.preview_image_path)
+        if pixmap.isNull():
+            self.image_preview.setText("Ошибка загрузки изображения")
+            return
+
+        # Масштабируем изображение под размер виджета
+        scaled_pixmap = pixmap.scaled(
+            self.image_preview.size(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation
+        )
+        self.image_preview.setPixmap(scaled_pixmap)
 
     def extract_contours(self):
         """Извлечение контуров из растровой карты"""
@@ -178,6 +279,18 @@ class EcoMonitoringPlugin:
 
         # Имя выходного файла
         output_file = os.path.join(output_dir, "contours.geojson")
+
+        # получаем значения из слайдеров
+        min_area = self.slider_min_area.value()
+        max_area = self.slider_max_area.value()
+        
+        # запуск потока с новыми параметрами
+        self.contour_thread = ContourExtractorThread(
+            image_path, 
+            output_file, 
+            min_area=min_area, 
+            max_area=max_area
+        )
 
         # Запуск потока для извлечения контуров
         self.progress_bar.setVisible(True)
@@ -474,15 +587,74 @@ class EcoMonitoringPlugin:
         except Exception as e:
             self.show_message("Ошибка", f"Ошибка генерации отчета: {str(e)}")
 
+# поточная обработка изображений
+class PreviewContourThread(QThread):
+    preview_ready = pyqtSignal(QPixmap)
+    error = pyqtSignal(str)
+
+    def __init__(self, image_path, min_area, max_area, parent=None):
+        super().__init__(parent)
+        self.image_path = image_path
+        self.min_area = min_area
+        self.max_area = max_area
+        self.image_preview = image_preview
+
+    def run(self):
+        try:
+            # Чтение изображения
+            image = cv2.imread(self.image_path)
+            if image is None:
+                self.error.emit("Не удалось загрузить изображение")
+                return
+
+            # Обработка изображения
+            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+            thresh = cv2.adaptiveThreshold(
+                gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                cv2.THRESH_BINARY_INV, 11, 2
+            )
+            kernel = np.ones((5, 5), np.uint8)
+            thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
+
+            contours, _ = cv2.findContours(
+                thresh, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE
+            )
+
+            # Рисуем подходящие контуры
+            preview_image = cv2.cvtColor(thresh, cv2.COLOR_GRAY2BGR)
+            for contour in contours:
+                area = cv2.contourArea(contour)
+                if self.min_area < area < self.max_area:
+                    cv2.drawContours(preview_image, [contour], -1, (0, 255, 0), 1)  # Зеленые контуры
+
+            # Преобразуем в QPixmap для отображения
+            height, width, _ = preview_image.shape
+            bytes_per_line = 3 * width
+            q_image = QImage(
+                preview_image.data, width, height,
+                bytes_per_line, QImage.Format_RGB888
+            ).rgbSwapped()
+            pixmap = QPixmap.fromImage(q_image).scaled(
+                self.image_preview.size(),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation
+            )
+            self.preview_ready.emit(pixmap)
+
+        except Exception as e:
+            self.error.emit(f"Ошибка предпросмотра: {str(e)}")
+
 class ContourExtractorThread(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
-    def __init__(self, image_path, output_file, parent=None):
+    def __init__(self, image_path, output_file, min_area=500, max_area=1e6, parent=None):
         super().__init__(parent)
         self.image_path = image_path
         self.output_file = output_file
+        self.min_area = min_area  # Минимальная площадь контура
+        self.max_area = max_area  # Максимальная площадь контура
 
     def run(self):
         try:
@@ -508,10 +680,10 @@ class ContourExtractorThread(QThread):
             kernel = np.ones((5, 5), np.uint8)
             thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-            # Поиск контуров
+            # Поиск контуров (включая вложенные)
             contours, hierarchy = cv2.findContours(
                 thresh,
-                cv2.RETR_TREE,  # Используем RETR_TREE для всех уровней контуров
+                cv2.RETR_TREE,  # Ищем все уровни контуров
                 cv2.CHAIN_APPROX_SIMPLE
             )
 
@@ -519,7 +691,8 @@ class ContourExtractorThread(QThread):
             features = []
             for i, contour in enumerate(contours):
                 area = cv2.contourArea(contour)
-                if area < 500 or area > 1000000:  # Фильтруем слишком маленькие или большие объекты
+                # Фильтруем по площади
+                if not (self.min_area < area < self.max_area):
                     continue
 
                 # Преобразуем контур в список координат
