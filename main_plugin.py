@@ -494,9 +494,6 @@ class ContourExtractorThread(QThread):
             # Переводим в оттенки серого
             gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
 
-            # Удаление шумов
-            gray = cv2.GaussianBlur(gray, (5, 5), 0)
-
             # Адаптивная бинаризация
             thresh = cv2.adaptiveThreshold(
                 gray,
@@ -512,23 +509,17 @@ class ContourExtractorThread(QThread):
             thresh = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
             # Поиск контуров
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            # Фильтрация внешнего контура
-            if not contours:
-                raise ValueError("Контур не найден")
-
-            # Сортировка контуров по площади (от большего к меньшему)
-            contours = sorted(contours, key=cv2.contourArea, reverse=True)
-
-            # Игнорируем самый большой контур (внешняя рамка)
-            contours = contours[1:]  # Пропускаем первый элемент (самый большой контур)
+            contours, hierarchy = cv2.findContours(
+                thresh,
+                cv2.RETR_TREE,  # Используем RETR_TREE для всех уровней контуров
+                cv2.CHAIN_APPROX_SIMPLE
+            )
 
             # Формируем GeoJSON FeatureCollection
             features = []
             for i, contour in enumerate(contours):
                 area = cv2.contourArea(contour)
-                if area < 500:  # фильтруем слишком маленькие объекты
+                if area < 500 or area > 1000000:  # Фильтруем слишком маленькие или большие объекты
                     continue
 
                 # Преобразуем контур в список координат
