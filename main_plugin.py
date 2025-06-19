@@ -145,13 +145,6 @@ class EcoMonitoringPlugin:
         title = QLabel("<h2>Экологический мониторинг</h2>")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
-        
-        # Предпросмотр изображения
-        self.image_preview = QLabel("Выберите изображение для предпросмотра")
-        self.image_preview.setFixedSize(300, 300)
-        self.image_preview.setStyleSheet("border: 1px solid #ccc;")
-        layout.addWidget(QLabel("Предпросмотр изображения:"))
-        layout.addWidget(self.image_preview)
 
         # Извлечение набора данных границ с карты
         btn_extract_contours = QPushButton("Извлечь контуры")
@@ -191,7 +184,24 @@ class EcoMonitoringPlugin:
         btn_pdf.setStyleSheet("background-color: #4CAF50; color: white; padding: 5px;")
         btn_pdf.clicked.connect(self.convert_pdf)
         layout.addWidget(btn_pdf)
-        
+
+        # подсказки
+        layout.addWidget(QLabel("💡 Советы:"))
+        layout.addWidget(QLabel("Минимальная площадь — размер самого маленького объекта, который будет учтен."))
+        layout.addWidget(QLabel("Максимальная площадь — игнорировать большие объекты, например, рамку карты."))
+
+        # Прогресс-бар
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
+        # Предпросмотр изображения
+        self.image_preview = QLabel("Выберите изображение для предпросмотра")
+        self.image_preview.setFixedSize(300, 300)
+        self.image_preview.setStyleSheet("border: 1px solid #ccc;")
+        layout.addWidget(QLabel("Предпросмотр изображения:"))
+        layout.addWidget(self.image_preview)
+
         # слайдеры для настройки площади машинного зрения
         slider_min_area = QSlider(Qt.Horizontal)
         slider_min_area.setMinimum(100)
@@ -214,16 +224,6 @@ class EcoMonitoringPlugin:
         # обработка сигналов слайдеров
         self.slider_min_area.valueChanged.connect(self.update_preview_with_thread)
         self.slider_max_area.valueChanged.connect(self.update_preview_with_thread)
-
-        # подсказки
-        layout.addWidget(QLabel("💡 Советы:"))
-        layout.addWidget(QLabel("Минимальная площадь — размер самого маленького объекта, который будет учтен."))
-        layout.addWidget(QLabel("Максимальная площадь — игнорировать большие объекты, например, рамку карты."))
-
-        # Прогресс-бар
-        self.progress_bar = QProgressBar()
-        self.progress_bar.setVisible(False)
-        layout.addWidget(self.progress_bar)
 
         # кнопка для выбора изображения
         btn_select_image = QPushButton("Выбрать изображение")
@@ -592,7 +592,7 @@ class PreviewContourThread(QThread):
     preview_ready = pyqtSignal(QPixmap)
     error = pyqtSignal(str)
 
-    def __init__(self, image_path, min_area, max_area, parent=None):
+    def __init__(self, image_path, min_area, max_area, image_preview, parent=None):
         super().__init__(parent)
         self.image_path = image_path
         self.min_area = min_area
